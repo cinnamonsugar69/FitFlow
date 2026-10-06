@@ -20,41 +20,68 @@ export default function IssuesPage() {
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
   const [filter, setFilter] = useState("All");
 
-  function loadIssues() {
-    const savedIssues = JSON.parse(
-      localStorage.getItem("fitflow-issues") || "[]"
-    );
+  async function loadIssues() {
+  const { data, error } = await supabase
+    .from("Issues")
+    .select("*")
+    .order("created_at", { ascending: false });
 
-    setIssues(savedIssues);
-
-    if (savedIssues.length > 0 && !selectedIssue) {
-      setSelectedIssue(savedIssues[0]);
-    }
+  if (error) {
+    alert(error.message);
+    return;
   }
+
+  const formattedIssues: Issue[] = (data || []).map((issue) => ({
+    id: issue.id,
+    memberName: issue.member_name,
+    phone: issue.phone,
+    category: issue.category,
+    priority: issue.priority,
+    assignedTo: issue.assigned_to,
+    description: issue.description,
+    status: issue.status,
+    createdAt: issue.created_at,
+    createdBy: issue.created_by,
+  }));
+
+  setIssues(formattedIssues);
+
+  if (formattedIssues.length > 0) {
+    setSelectedIssue(formattedIssues[0]);
+  }
+}
 
   useEffect(() => {
     loadIssues();
   }, []);
 
-  function updateStatus(issueId: string, newStatus: string) {
-    const updatedIssues = issues.map((issue) =>
-      issue.id === issueId
-        ? { ...issue, status: newStatus }
-        : issue
-    );
+  async function updateStatus(issueId: string, newStatus: string) {
+  const { error } = await supabase
+    .from("Issues")
+    .update({ status: newStatus })
+    .eq("id", issueId);
 
-    setIssues(updatedIssues);
-
-    localStorage.setItem(
-      "fitflow-issues",
-      JSON.stringify(updatedIssues)
-    );
-
-    const updatedSelected =
-      updatedIssues.find((issue) => issue.id === issueId) || null;
-
-    setSelectedIssue(updatedSelected);
+  if (error) {
+    alert(error.message);
+    return;
   }
+ const updatedIssues = issues.map((issue) =>
+    issue.id === issueId
+      ? { ...issue, status: newStatus }
+      : issue
+  );
+
+  setIssues(updatedIssues);
+
+  const updatedSelected =
+    updatedIssues.find((issue) => issue.id === issueId) || null;
+
+  setSelectedIssue(updatedSelected);
+}
+
+
+  
+   
 
   function getAge(createdAt: string) {
     const created = new Date(createdAt).getTime();
