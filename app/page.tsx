@@ -2,10 +2,17 @@
 
 import { FormEvent, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useStaff } from "./components/staff-access";
+import { canManage } from "@/lib/staff";
+import Link from "next/link";
 
 type Priority = "Normal" | "Urgent";
 
 export default function Home() {
+  const staff = useStaff();
+  const isManager = canManage(staff);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [memberName, setMemberName] = useState("");
   const [phone, setPhone] = useState("");
   const [category, setCategory] = useState("");
@@ -14,39 +21,46 @@ export default function Home() {
   const [description, setDescription] = useState("");
   const [saved, setSaved] = useState(false);
 
- async function saveIssue(event: FormEvent<HTMLFormElement>) {
+  async function saveIssue(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (saving) return;
+    setSaved(false);
+    setSaveError("");
 
     if (!memberName.trim() || !phone.trim() || !category || !description.trim()) {
-      alert("Please fill out the member name, phone number, category, and issue.");
+      setSaveError("Please fill out the member name, phone number, category, and issue.");
       return;
     }
 
-  const { error } = await supabase.from("Issues").insert({
-  member_name: memberName,
-  phone,
-  category,
-  priority,
-  assigned_to: assignedTo,
-  description,
-  status: "Open",
-  created_by: "Front Desk Staff",
-});
-
-if (error) {
-  alert (error.message);
-  return;
-}
-    setSaved(true);
-
-    setMemberName("");
-    setPhone("");
-    setCategory("");
-    setPriority("Normal");
-    setAssignedTo("Unassigned");
-    setDescription("");
-
-    setTimeout(() => setSaved(false), 4000);
+    setSaving(true);
+    try {
+      const { error } = await supabase.from("Issues").insert({
+        member_name: memberName.trim(),
+        phone: phone.trim(),
+        category,
+        priority,
+        assigned_to: isManager ? assignedTo : "Unassigned",
+        description: description.trim(),
+        status: "Open",
+        created_by: staff.display_name,
+        created_by_user_id: staff.id,
+      });
+      if (error) {
+        setSaveError("Could not save the issue. Check your connection and staff access, then try again.");
+        return;
+      }
+      setSaved(true);
+      setMemberName("");
+      setPhone("");
+      setCategory("");
+      setPriority("Normal");
+      setAssignedTo("Unassigned");
+      setDescription("");
+    } catch {
+      setSaveError("Unable to connect. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -64,9 +78,9 @@ if (error) {
               + New Issue
             </button>
 
-            <button className="w-full rounded-xl px-4 py-3 text-left text-slate-600 hover:bg-slate-50">
+            <Link href="/issues" className="block w-full rounded-xl px-4 py-3 text-left text-slate-600 hover:bg-slate-50">
               Issues
-            </button>
+            </Link>
 
             <button className="w-full rounded-xl px-4 py-3 text-left text-slate-600 hover:bg-slate-50">
               Members
@@ -83,7 +97,7 @@ if (error) {
 
           <div className="mt-12 border-t border-slate-200 pt-6">
             <p className="text-sm font-semibold text-slate-700">
-              Front Desk Staff
+              {staff.display_name}
             </p>
             <p className="text-xs text-slate-500">FitFlow Demo Gym</p>
           </div>
@@ -108,13 +122,14 @@ if (error) {
               </div>
 
               <div className="hidden rounded-xl border border-slate-200 bg-white px-4 py-3 text-right shadow-sm sm:block">
-                <p className="text-sm font-semibold">Front Desk</p>
+                <p className="text-sm font-semibold">{isManager ? "Manager" : "Staff"}</p>
                 <p className="text-xs text-slate-500">
                   {new Date().toLocaleDateString()}
                 </p>
               </div>
             </div>
 
+            {saveError && <p role="alert" className="mb-6 rounded-xl bg-red-50 p-4 text-red-700">{saveError}</p>}
             {saved && (
               <div className="mb-6 rounded-xl border border-green-200 bg-green-50 px-5 py-4 font-medium text-green-700">
                 ✓ Issue saved successfully. Management can now see it.
@@ -125,6 +140,7 @@ if (error) {
               onSubmit={saveIssue}
               className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm md:p-8"
             >
+              <fieldset disabled={saving} className="contents">
               <div className="grid gap-6 md:grid-cols-2">
                 <div>
                   <label className="mb-2 block text-sm font-semibold">
@@ -183,6 +199,7 @@ if (error) {
 
                   <select
                     value={assignedTo}
+                    disabled={!isManager || saving}
                     onChange={(e) => setAssignedTo(e.target.value)}
                     className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
                   >
@@ -190,6 +207,7 @@ if (error) {
                     <option>General Manager</option>
                     <option>Assistant Manager</option>
                   </select>
+                  {!isManager && <p className="mt-2 text-sm text-slate-500">A manager will assign this issue.</p>}
                 </div>
 
                 <div>
@@ -267,12 +285,14 @@ if (error) {
 
                   <button
                     type="submit"
+                    disabled={saving}
                     className="rounded-xl bg-blue-600 px-7 py-3 font-semibold text-white shadow-sm transition hover:bg-blue-700"
                   >
-                    Save Issue
+                    {saving ? "Saving…" : "Save Issue"}
                   </button>
                 </div>
               </div>
+              </fieldset>
             </form>
           </div>
         </section>

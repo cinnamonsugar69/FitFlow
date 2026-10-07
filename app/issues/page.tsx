@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useStaff } from "../components/staff-access";
+import { canManage } from "@/lib/staff";
+import Link from "next/link";
 type Issue = {
   id: string;
   memberName: string;
@@ -16,72 +19,76 @@ type Issue = {
 };
 
 export default function IssuesPage() {
+  const staff = useStaff();
+  const isManager = canManage(staff);
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [updating, setUpdating] = useState(false);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
   const [filter, setFilter] = useState("All");
 
-  async function loadIssues() {
-  const { data, error } = await supabase
-    .from("Issues")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    alert(error.message);
-    return;
-  }
-
-  const formattedIssues: Issue[] = (data || []).map((issue) => ({
-    id: issue.id,
-    memberName: issue.member_name,
-    phone: issue.phone,
-    category: issue.category,
-    priority: issue.priority,
-    assignedTo: issue.assigned_to,
-    description: issue.description,
-    status: issue.status,
-    createdAt: issue.created_at,
-    createdBy: issue.created_by,
-  }));
-
-  setIssues(formattedIssues);
-
-  if (formattedIssues.length > 0) {
-    setSelectedIssue(formattedIssues[0]);
-  }
-}
-
   useEffect(() => {
-    loadIssues();
+    let active = true;
+    async function loadIssues() {
+      try {
+        const { data, error } = await supabase
+          .from("Issues").select("*").order("created_at", { ascending: false });
+        if (!active) return;
+        if (error) {
+          setErrorMessage("Could not load issues. Check your connection and staff access, then refresh.");
+          return;
+        }
+        const formattedIssues: Issue[] = (data || []).map((issue) => ({
+          id: issue.id,
+          memberName: issue.member_name,
+          phone: issue.phone,
+          category: issue.category,
+          priority: issue.priority,
+          assignedTo: issue.assigned_to,
+          description: issue.description,
+          status: issue.status,
+          createdAt: issue.created_at,
+          createdBy: issue.created_by,
+        }));
+        setIssues(formattedIssues);
+        setSelectedIssue(formattedIssues[0] ?? null);
+      } catch {
+        if (active) setErrorMessage("Unable to connect. Please refresh to try again.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    void loadIssues();
+    return () => { active = false; };
   }, []);
 
   async function updateStatus(issueId: string, newStatus: string) {
-  const { error } = await supabase
-    .from("Issues")
-    .update({ status: newStatus })
-    .eq("id", issueId);
-
-  if (error) {
-    alert(error.message);
-    return;
+    await updateIssue(issueId, { status: newStatus });
   }
- const updatedIssues = issues.map((issue) =>
-    issue.id === issueId
-      ? { ...issue, status: newStatus }
-      : issue
-  );
 
-  setIssues(updatedIssues);
-
-  const updatedSelected =
-    updatedIssues.find((issue) => issue.id === issueId) || null;
-
-  setSelectedIssue(updatedSelected);
-}
-
-
-  
-   
+  async function updateIssue(issueId: string, changes: { status?: string; assigned_to?: string }) {
+    if (!isManager || updating) return;
+    setUpdating(true);
+    setErrorMessage("");
+    try {
+      const { data, error } = await supabase
+        .from("Issues").update(changes).eq("id", issueId)
+        .select("status, assigned_to").single();
+      if (error) {
+        setErrorMessage("Could not update the issue. Check your connection and manager access, then try again.");
+        return;
+      }
+      const updatedIssues = issues.map((issue) => issue.id === issueId
+        ? { ...issue, status: data.status, assignedTo: data.assigned_to } : issue);
+      setIssues(updatedIssues);
+      setSelectedIssue(updatedIssues.find(issue => issue.id === issueId) ?? null);
+    } catch {
+      setErrorMessage("Unable to connect. Please try again.");
+    } finally {
+      setUpdating(false);
+    }
+  }
 
   function getAge(createdAt: string) {
     const created = new Date(createdAt).getTime();
@@ -145,19 +152,19 @@ export default function IssuesPage() {
           </div>
 
           <nav className="space-y-2">
-            <a
+            <Link
               href="/"
               className="block w-full rounded-xl px-4 py-3 text-slate-600 hover:bg-slate-50"
             >
               + New Issue
-            </a>
+            </Link>
 
-            <a
+            <Link
               href="/issues"
               className="block w-full rounded-xl bg-blue-50 px-4 py-3 font-semibold text-blue-600"
             >
               Issues
-            </a>
+            </Link>
 
             <button className="w-full rounded-xl px-4 py-3 text-left text-slate-600">
               Members
@@ -174,7 +181,7 @@ export default function IssuesPage() {
 
           <div className="mt-12 border-t border-slate-200 pt-6">
             <p className="text-sm font-semibold">
-              Gym Manager
+              {staff.display_name}
             </p>
             <p className="text-xs text-slate-500">
               FitFlow Demo Gym
@@ -192,7 +199,7 @@ export default function IssuesPage() {
               </p>
 
               <h1 className="mt-1 text-3xl font-bold">
-                Member Issue Dashboard
+                {isManager ? "Member Issue Dashboard" : "My Submitted Issues"}
               </h1>
 
               <p className="mt-2 text-slate-500">
@@ -253,6 +260,7 @@ export default function IssuesPage() {
 
             <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
 
+              {errorMessage && <p role="alert" className="rounded-xl bg-red-50 p-4 text-red-700 xl:col-span-2">{errorMessage}</p>}
               {/* Issue Grid */}
               <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className="overflow-x-auto">
@@ -337,7 +345,7 @@ export default function IssuesPage() {
                             colSpan={6}
                             className="px-5 py-16 text-center text-slate-400"
                           >
-                            No issues found.
+                            {loading ? "Loading issues…" : errorMessage ? "Issues are unavailable." : "No issues found."}
                           </td>
                         </tr>
                       )}
@@ -383,6 +391,15 @@ export default function IssuesPage() {
                       label="Status"
                       value={selectedIssue.status}
                     />
+                    <Detail label="Submitted By" value={selectedIssue.createdBy} />
+                    {isManager && <label className="block text-sm font-semibold">Assign issue
+                      <select aria-label="Assign issue" disabled={updating} value={selectedIssue.assignedTo}
+                        onChange={e => void updateIssue(selectedIssue.id, { assigned_to: e.target.value })}
+                        className="mt-2 w-full rounded-xl border p-3">
+                        <option>Unassigned</option><option>General Manager</option><option>Assistant Manager</option>
+                        {!["Unassigned", "General Manager", "Assistant Manager"].includes(selectedIssue.assignedTo) && <option>{selectedIssue.assignedTo}</option>}
+                      </select>
+                    </label>}
 
                     <div className="mt-6">
                       <p className="text-sm font-semibold text-slate-500">
@@ -395,8 +412,9 @@ export default function IssuesPage() {
                     </div>
 
                     <div className="mt-8 space-y-3">
-                      {selectedIssue.status === "Open" && (
+                      {isManager && selectedIssue.status === "Open" && (
                         <button
+                          disabled={updating}
                           onClick={() =>
                             updateStatus(
                               selectedIssue.id,
@@ -409,8 +427,9 @@ export default function IssuesPage() {
                         </button>
                       )}
 
-                      {selectedIssue.status !== "Resolved" && (
+                      {isManager && selectedIssue.status !== "Resolved" && (
                         <button
+                          disabled={updating}
                           onClick={() =>
                             updateStatus(
                               selectedIssue.id,
