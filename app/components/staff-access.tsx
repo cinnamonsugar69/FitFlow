@@ -4,6 +4,7 @@ import { createContext, FormEvent, ReactNode, useContext, useEffect, useState } 
 import { supabase } from "@/lib/supabase";
 import { StaffProfile } from "@/lib/staff";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 const StaffContext = createContext<StaffProfile | null>(null);
 
@@ -14,6 +15,13 @@ export function useStaff() {
 }
 
 export default function StaffAccess({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  // Recovery must work before staff access is loaded; database RLS still protects issues.
+  if (pathname === "/reset-password") return <>{children}</>;
+  return <StaffGate>{children}</StaffGate>;
+}
+
+function StaffGate({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<StaffProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [signedIn, setSignedIn] = useState(false);
@@ -50,6 +58,11 @@ export default function StaffAccess({ children }: { children: ReactNode }) {
     // INITIAL_SESSION restores sign-in; later events also handle sign-out in another tab.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const userId = session?.user.id ?? null;
+      // Dashboard recovery emails may still redirect to the site's root.
+      if (event === "PASSWORD_RECOVERY") {
+        window.location.replace("/reset-password");
+        return;
+      }
       // Focus and token refresh can repeat sign-in events. Keep unsaved forms.
       if (userId === lastUserId && (event === "SIGNED_IN" || event === "TOKEN_REFRESHED")) return;
       lastUserId = userId;
@@ -95,7 +108,8 @@ export default function StaffAccess({ children }: { children: ReactNode }) {
           <label className="block">Email<input required type="email" autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} className="mt-1 w-full rounded-xl border p-3" /></label>
           <label className="block">Password<input required type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} className="mt-1 w-full rounded-xl border p-3" /></label>
           <button disabled={busy} className="w-full rounded-xl bg-blue-600 p-3 font-semibold text-white disabled:opacity-50">{busy ? "Signing in…" : "Sign in"}</button>
-          <p className="text-sm text-slate-500">Need an account or a password reset? Contact your manager.</p>
+          <Link href="/reset-password" className="block text-blue-600 underline">Forgot your password?</Link>
+          <p className="text-sm text-slate-500">Need an account? Contact your manager.</p>
         </form>}
       </div>
     </main>

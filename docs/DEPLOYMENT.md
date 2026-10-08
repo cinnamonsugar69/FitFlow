@@ -44,8 +44,9 @@ immediately; refresh the app after role/name changes.
 In Supabase Authentication, enable Email/password login and disable public signups.
 In Users, create a confirmed staff account and a confirmed manager account with
 passwords using the dashboard's Create user flow. Deliver passwords privately.
-This milestone uses operator-created accounts; invite-link acceptance and
-self-service password reset are not implemented. Manage passwords in the dashboard.
+This milestone uses operator-created accounts; invite-link acceptance is not
+implemented. Staff can use Forgot your password on the sign-in screen to request
+a recovery email, then set a new password at `/reset-password`.
 
 Copy the two user UUIDs into these statements and choose real staff names:
 
@@ -102,7 +103,20 @@ placeholder values. Deployments must use the real project values.
 
 In Supabase Auth URL configuration, set the Site URL to the final HTTPS URL and
 allow intended redirect URLs. Password sign-in here has no email redirect,
-but these settings are needed before introducing invites or recovery links.
+but recovery emails require an allowed redirect to the change-password screen:
+`https://fit-flow-blue.vercel.app/reset-password` for the current production site,
+and `http://localhost:3000/reset-password` for local testing. Replace the production
+address if the domain changes. Keep the default recovery email template's
+confirmation link so Supabase verifies the token before redirecting to the app.
+
+Test recovery with a real test account: request one email, open its newest link,
+save matching passwords of at least 12 characters, and sign in using the new
+password. Also check mismatched passwords and an expired link. A dashboard
+recovery email redirected to the site root is forwarded to the reset screen.
+Signed-out visitors cannot update a password without a valid Auth session.
+Supabase's default email service is limited to two emails per hour; configure
+custom SMTP before wider rollout. Email delivery and recovery must be verified
+against the deployed project, separately from automated database permission tests.
 
 Apply the migration and provision profiles before switching app traffic. The old
 anonymous demo app stops working when its open policies are replaced, so coordinate
